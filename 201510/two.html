@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
   <head>
     <meta charset='utf-8'>
     <meta http-equiv="X-UA-Compatible" content="chrome=1">
@@ -70,7 +69,7 @@
 <canvas id="stage"></canvas>
 <script>
 var World = (function(){
-  var program = function (gl){
+  var glInit = function (gl){
 
       var vertexShader = gl.createShader(gl.VERTEX_SHADER);
       gl.shaderSource(vertexShader, document.getElementById("v").text);
@@ -91,9 +90,9 @@ var World = (function(){
         gl.enableVertexAttribArray(result[keys[i]] = gl.getAttribLocation(program, key[i]));
       }
 
-      // 코드가 길어지면 버그를 양산한다.
-      //program.aPosition = gl.getAttribLocation(program, "aPosition");
-      //gl.enableVertexAttribArray(program.aPosition);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LESS);
+
       return result;
   }
 
@@ -101,15 +100,20 @@ var World = (function(){
       var gl = this.gl = canvas.getContext("webgl");
       this.canvas = canvas; // canvas의 크기를 알아야 함
       this.children = [];
+      this.vertex_data = []; //this.vertex_data = []; 새로 생성하는 것보다는 0 으로 초기화 하는게 싸다.
+      this.index_data = [];
+      this.position_data = [];
+      this.scale_data = [];
+      this.rotation_data = [];
+      this.color_data = [];
       this.changed = {
           "vertex" : true,
           "position" : true,
           "scale" : true,
           "rotate" : true,
-          "color" : true,
-          "viewport" : true
+          "color" : true
       };
-      this.pointer = program(gl);
+      this.context = glInit(gl);
       this.backgroundColor(1,1,1,1);
   }, fn = World.prototype; // fn으로 prototype 키 잡
 
@@ -119,13 +123,14 @@ var World = (function(){
 
   fn.viewport = function(width, height){
       this.view = {"w" : width, "h" : height};
-      this.changed.viewport = true; // notifyChangeData 를 삭제
-      // 함수와 호출이 등가면
+      gl.viewport(0, 0, this.view.w, this.view.h);
+    }
   };
 
   fn.add = function(mesh){
       mesh.parent = this;
       this.meshes.push(mesh);
+      this.changed.vertex = true;
   };
 
   // add가 있으니까 대칭성 유지를 위해 del 만들기
@@ -134,71 +139,61 @@ var World = (function(){
       if(this !== mesh.parent || this.children.indexOf(mesh) == -1) return;
       mesh.parent = null;
       this.children.splice(this.children.indexOf(mesh),1);
-  }
+      this.changed.vertex = true;
+  };
 
+  fn.positionChanged = function(mesh){
+
+  }
 
   fn.render = function(){
     var gl = this.gl;
     var program = this.program;
-    var mesh, i, j, len, len2, totalCount = 0;
+    var mesh, i, j, len, len2, len3, totalCount = 0;
 
-    if(this.changed.viewport){
-        gl.viewport(0, 0, this.view.w, this.view.h);
-        gl.enable(gl.DEPTH_TEST);
-        gl.depthFunc(gl.LESS);
-    }
-
+    //대규모 개발의 3가지 원칙
     if(this.changed.vertex){
-        this.vertex_data = [];
-        this.index_data = [];
-        this.position_data = [];
-        this.scale_data = [];
-        this.rotation_data = [];
-        this.color_data = [];
-        for(i = 0, len = this.meshes.length; i < len; i++) {
-            mesh = this.meshes[i];
-            var len3 = this.vertex_data.length / 3;
-            this.vertex_data = this.vertex_data.concat(mesh.geometry.vertices);
+        this.changed.vertex = false ; //즉시 상태 초기화
+        this.vertex_data.length   = //this.vertex_data = []; 새로 생성하는 것보다는 0 으로 초기화 하는게 싸다.
+        this.index_data.length    =
+        this.position_data.length =
+        this.scale_data.length    =
+        this.rotation_data.length =
+        this.color_data.length    = 0;
+        for(i = 0, len = this.children.length; i < len; i++) {
+            mesh = this.children[i];
+            len3 = this.vertex_data.length / 3; // vertex data 를 넣기 전에 offset을 잡아줌
+            //this.vertex_data = this.vertex_data.concat(mesh.geometry.vertices);
+            // 상태와 알고리즘을 가까이 쓰는게 좋음.
             for(j = 0, len2 = mesh.geometry.indices.length; j < len2; j++) {
-                this.index_data.push(mesh.geometry.indices[j] + len3);
+                this.index_data.push(mesh.geometry.indices[j] + len3); //offset 인덱스 data 넣어줌
             }
-
+            //객체를 계속 만드는 concat 대신 for loop
+            for(j = 0, len2 = mesh.geometry.indices.length; j < len2; j++) {
+                this.vertex_data.push(mesh.geometry.vertices[j]; //vertex data 넣어줌
+            }
             for(j = 0, len2 = mesh.geometry.vertices.length/3; j < len2; j++){
-                this.position_data.push(mesh.px, mesh.py, mesh.pz);
+                this.position_data.push(mesh.px, mesh.py, mesh.pz); //모든 점에 대한 변환 정보를 보내줘야 한다.
                 this.scale_data.push(mesh.sx, mesh.sy, mesh.sz);
                 this.rotation_data.push(mesh.rx, mesh.ry, mesh.rz);
                 this.color_data.push(mesh.r, mesh.g, mesh.b);
             }
-            totalCount += len2;
         }
-        this.vertexBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.vertex_data), gl.STATIC_DRAW);
-        gl.vertexAttribPointer(program.aVertexPosition, 3, gl.FLOAT, false, 0, 0);
 
         this.indexBuffer = gl.createBuffer(gl.ELEMENT_ARRAY_BUFFER);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.index_data), gl.STATIC_DRAW);
 
-        this.positionBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.position_data), gl.STATIC_DRAW);
-        gl.vertexAttribPointer(program.aPosition, 3, gl.FLOAT, false, 0, 0);
-
-        this.scaleBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.scaleBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.scale_data), gl.STATIC_DRAW);
-        gl.vertexAttribPointer(program.aScale, 3, gl.FLOAT, false, 0, 0);
-
-        this.colorBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.color_data), gl.STATIC_DRAW);
-        gl.vertexAttribPointer(program.aColor, 3, gl.FLOAT, false, 0, 0);
-
-        this.roatationBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.roatationBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.rotation_data), gl.STATIC_DRAW);
-        gl.vertexAttribPointer(program.aRotation, 3, gl.FLOAT, false, 0, 0);
+        // 코드 중복 제거
+        var key = "vertex, position, scale, color, rotation".split(","),
+            key2 = "aVertexPosition, aPosition, aScale, aColor, aRotation".split(",");
+        i = key.length ;
+        while(i--){
+          this.key[i] = gl.createBuffer(gl.ARRAY_BUFFER); // gl.ARRAY_BUFFER
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.vertex_data), gl.STATIC_DRAW);
+          gl.vertexAttribPointer(program.aVertexPosition, 3, gl.FLOAT, false, 0, 0);
+        }
 
     }else{
         if(this.changed.position) {
