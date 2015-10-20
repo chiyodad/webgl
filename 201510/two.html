@@ -7,23 +7,108 @@
     <meta name="description" content="Webgl : WebGL Test Repository">
     <link rel="stylesheet" type="text/css" media="screen" href="stylesheets/stylesheet.css">
      <style>
-        body, html {
-          height: 100%;
+        html, body {
+          height: 100%; /* 무조건 여기서 먹어야 함 */
           padding: 0px;
           margin: 0px;
           background: #f00191;
         }
+
+        img { margin: 0; padding:0; border:0;}
   </style>
-    <script type="text/javascript">
+  <script id="v" type="text/v">
+  //vertex
+      attribute vec3 aVertexPosition;
+      attribute vec3 aPosition;
+      attribute vec3 aScale;
+      attribute vec3 aRotation;
+      attribute vec3 aColor;
+      varying vec3 vColor;
 
+      //이동 매트릭스 72p 하단
+      mat4 positionMTX(vec3 p){
+         return mat4(1,0,0,0,  0,1,0,0,  0,0,1,0,  p[0],p[1],p[2],1);
+      }
 
-    </script>
-    <title>Webgl</title>
+      //크기 변환 메트릭스 75p 하단
+      mat4 scaleMTX(vec3 sc){
+         return mat4(sc[0],0,0,0,  0,sc[1],0,0,  0,0,sc[2],0,  0,0,0,1);
+      }
+
+      //크기 변환 메트릭스 74p 하단 오일러 변환을 사용하지 않고 4원수 변환을 사용함.
+      mat4 rotationMTX(vec3 r){
+         float s, c;
+         s = sin(r[0]), c = cos(r[0]);
+         mat4 mx = mat4(1,0,0,0,  0,c,-s,0,  0,s,c,0,  0,0,0,1);
+         s = sin(r[1]), c = cos(r[1]);
+         mat4 my = mat4(c,0,-s,0,  0,1,0,0,  s,0,c,0,  0,0,0,1);
+         s = sin(r[2]), c = cos(r[2]);
+         mat4 mz = mat4(c,-s,0,0,  s,c,0,0,  0,0,1,0,  0,0,0,1);
+         return mx*my*mz;
+      }
+
+      void main(void){
+         vColor = aColor;
+         //연산자가 뒤에 있는 것이 좋다 (JS파싱)
+         gl_Position = positionMTX(aPosition)*
+                       rotationMTX(aRotation)*
+                       scaleMTX(aScale)*
+                       vec4(aVertexPosition, 1.0);
+         gl_PointSize = 2.0;
+      }
+   </script>
+   <script id="f" type="text/f">
+    //fragement
+      precision lowp float;
+      varying vec3 vColor;
+      void main(void){
+         gl_FragColor = vec4(vColor, 1);
+      }
+   </script>
   </head>
-      <canvas id="glCanvas"></canvas>
   <body>
-    test
+<canvas id="stage"></canvas>
+<script>
+var program = function (gl){
 
+    var vertexShader = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vertexShader, document.getElementById("v").text);
+    gl.compileShader(vertexShader);
+
+    var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fragmentShader, document.getElementById("v").text);//fragmentShaderSource);
+    gl.compileShader(fragmentShader);
+
+    var program = this.program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    gl.useProgram(program);
+
+    var result = {}, keysf = "aVertexPosition, aPosition, aScale, aRotation, aColor".split(","), i= keys.length;
+    while(i--){
+      gl.enableVertexAttribArray(result[keys[i]] = gl.getAttribLocation(program, key[i]));
+    }
+
+    // 코드가 길어지면 버그를 양산한다.
+    //program.aPosition = gl.getAttribLocation(program, "aPosition");
+    //gl.enableVertexAttribArray(program.aPosition);
+    return result;
+}
+
+var World = function(canvas){
+    var gl = this.gl = canvas.getContext("webgl");
+    this.canvas = canvas;
+    this.meshes = [];
+    this.changed = {
+        "vertex" : true,
+        "position" : true,
+        "scale" : true,
+        "rotate" : true,
+        "color" : true,
+        "viewport" : true
+    }
+</script>
 
   </body>
 </html>
