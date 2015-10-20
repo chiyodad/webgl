@@ -69,45 +69,276 @@
   <body>
 <canvas id="stage"></canvas>
 <script>
-var program = function (gl){
+var World = (function(){
+  var program = function (gl){
 
-    var vertexShader = gl.createShader(gl.VERTEX_SHADER);
-    gl.shaderSource(vertexShader, document.getElementById("v").text);
-    gl.compileShader(vertexShader);
+      var vertexShader = gl.createShader(gl.VERTEX_SHADER);
+      gl.shaderSource(vertexShader, document.getElementById("v").text);
+      gl.compileShader(vertexShader);
 
-    var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
-    gl.shaderSource(fragmentShader, document.getElementById("v").text);//fragmentShaderSource);
-    gl.compileShader(fragmentShader);
+      var fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(fragmentShader, document.getElementById("v").text);//fragmentShaderSource);
+      gl.compileShader(fragmentShader);
 
-    var program = this.program = gl.createProgram();
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-    gl.useProgram(program);
+      var program = this.program = gl.createProgram();
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      gl.useProgram(program);
 
-    var result = {}, keysf = "aVertexPosition, aPosition, aScale, aRotation, aColor".split(","), i= keys.length;
-    while(i--){
-      gl.enableVertexAttribArray(result[keys[i]] = gl.getAttribLocation(program, key[i]));
+      var result = {}, keysf = "aVertexPosition, aPosition, aScale, aRotation, aColor".split(","), i= keys.length;
+      while(i--){
+        gl.enableVertexAttribArray(result[keys[i]] = gl.getAttribLocation(program, key[i]));
+      }
+
+      // 코드가 길어지면 버그를 양산한다.
+      //program.aPosition = gl.getAttribLocation(program, "aPosition");
+      //gl.enableVertexAttribArray(program.aPosition);
+      return result;
+  }
+
+  var World = function(canvas){
+      var gl = this.gl = canvas.getContext("webgl");
+      this.canvas = canvas; // canvas의 크기를 알아야 함
+      this.children = [];
+      this.changed = {
+          "vertex" : true,
+          "position" : true,
+          "scale" : true,
+          "rotate" : true,
+          "color" : true,
+          "viewport" : true
+      };
+      this.pointer = program(gl);
+      this.backgroundColor(1,1,1,1);
+  }, fn = World.prototype; // fn으로 prototype 키 잡
+
+  fn.backgroundColor = function(r,g,b,a){
+    this.gl.clearColor(r, g, b, a);
+  }
+
+  fn.viewport = function(width, height){
+      this.view = {"w" : width, "h" : height};
+      this.changed.viewport = true; // notifyChangeData 를 삭제
+      // 함수와 호출이 등가면
+  };
+
+  fn.add = function(mesh){
+      mesh.parent = this;
+      this.meshes.push(mesh);
+  };
+
+  // add가 있으니까 대칭성 유지를 위해 del 만들기
+  // 쉴드 패턴
+  fn.del = function(mesh){
+      if(this !== mesh.parent || this.children.indexOf(mesh) == -1) return;
+      mesh.parent = null;
+      this.children.splice(this.children.indexOf(mesh),1);
+  }
+
+
+  fn.render = function(){
+    var gl = this.gl;
+    var program = this.program;
+    var mesh, i, j, len, len2, totalCount = 0;
+
+    if(this.changed.viewport){
+        gl.viewport(0, 0, this.view.w, this.view.h);
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthFunc(gl.LESS);
     }
 
-    // 코드가 길어지면 버그를 양산한다.
-    //program.aPosition = gl.getAttribLocation(program, "aPosition");
-    //gl.enableVertexAttribArray(program.aPosition);
-    return result;
-}
+    if(this.changed.vertex){
+        this.vertex_data = [];
+        this.index_data = [];
+        this.position_data = [];
+        this.scale_data = [];
+        this.rotation_data = [];
+        this.color_data = [];
+        for(i = 0, len = this.meshes.length; i < len; i++) {
+            mesh = this.meshes[i];
+            var len3 = this.vertex_data.length / 3;
+            this.vertex_data = this.vertex_data.concat(mesh.geometry.vertices);
+            for(j = 0, len2 = mesh.geometry.indices.length; j < len2; j++) {
+                this.index_data.push(mesh.geometry.indices[j] + len3);
+            }
 
-var World = function(canvas){
-    var gl = this.gl = canvas.getContext("webgl");
-    this.canvas = canvas;
-    this.meshes = [];
+            for(j = 0, len2 = mesh.geometry.vertices.length/3; j < len2; j++){
+                this.position_data.push(mesh.px, mesh.py, mesh.pz);
+                this.scale_data.push(mesh.sx, mesh.sy, mesh.sz);
+                this.rotation_data.push(mesh.rx, mesh.ry, mesh.rz);
+                this.color_data.push(mesh.r, mesh.g, mesh.b);
+            }
+            totalCount += len2;
+        }
+        this.vertexBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.vertex_data), gl.STATIC_DRAW);
+        gl.vertexAttribPointer(program.aVertexPosition, 3, gl.FLOAT, false, 0, 0);
+
+        this.indexBuffer = gl.createBuffer(gl.ELEMENT_ARRAY_BUFFER);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.index_data), gl.STATIC_DRAW);
+
+        this.positionBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.position_data), gl.STATIC_DRAW);
+        gl.vertexAttribPointer(program.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+        this.scaleBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.scaleBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.scale_data), gl.STATIC_DRAW);
+        gl.vertexAttribPointer(program.aScale, 3, gl.FLOAT, false, 0, 0);
+
+        this.colorBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.color_data), gl.STATIC_DRAW);
+        gl.vertexAttribPointer(program.aColor, 3, gl.FLOAT, false, 0, 0);
+
+        this.roatationBuffer = gl.createBuffer(gl.ARRAY_BUFFER);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.roatationBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.rotation_data), gl.STATIC_DRAW);
+        gl.vertexAttribPointer(program.aRotation, 3, gl.FLOAT, false, 0, 0);
+
+    }else{
+        if(this.changed.position) {
+            this.position_data = [];
+            for (i = 0, len = this.meshes.length; i < len; i++){
+                mesh = this.meshes[i];
+                for (j = 0, len2 = mesh.geometry.vertices.length/3; j < len2; j++) {
+                    this.position_data.push(mesh.px, mesh.py, mesh.pz);
+                }
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.position_data), gl.STATIC_DRAW);
+        }
+        if(this.changed.scale) {
+            this.scale_data = [];
+            for (i = 0, len = this.meshes.length; i < len;  i++){
+                mesh = this.meshes[i];
+                for (j = 0, len2 = mesh.geometry.vertices.length/3; j < len2; j++) {
+                    this.scale_data.push(mesh.sx, mesh.sy, mesh.sz);
+                }
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.scaleBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.scale_data), gl.STATIC_DRAW);
+        }
+        if(this.changed.color) {
+            this.color_data = [];
+            for (i = 0, len = this.meshes.length; i < len; i++) {
+                mesh = this.meshes[i];
+                for (j = 0, len2 = mesh.geometry.vertices.length/3; j < len2; j++) {
+                    this.color_data.push(mesh.r, mesh.g, mesh.b);
+                }
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.color_data), gl.STATIC_DRAW);
+        }
+
+        if(this.changed.rotate) {
+            this.rotation_data = [];
+            for (i = 0, len = this.meshes.length; i < len; i++) {
+                mesh = this.meshes[i];
+                for (j = 0, len2 = mesh.geometry.vertices.length/3; j < len2; j++) {
+                    this.rotation_data.push(mesh.rx, mesh.ry, mesh.rz);
+                }
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.roatationBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.rotation_data), gl.STATIC_DRAW);
+        }
+    }
+
     this.changed = {
-        "vertex" : true,
-        "position" : true,
-        "scale" : true,
-        "rotate" : true,
-        "color" : true,
-        "viewport" : true
+        "vertex" : false,
+        "position" : false,
+        "scale" : false,
+        "rotate" : false,
+        "color" : false,
+        "viewport" : false
     }
+    gl.drawElements(gl.TRIANGLES, this.index_data.length, gl.UNSIGNED_SHORT, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+};
+
+var Geometry = function(vertices, indices){
+    this.vertices = vertices;
+    this.indices = indices;
+};
+
+var Material = function(color, imgurl){
+    this.color = color;
+    if(imgurl){
+        var img = new Image();
+        var pthis = this;
+        img.onload = function(evt){
+            pthis.img = this;
+        };
+        img.src = "";
+    }
+};
+
+Material.prototype.setType = function(type){
+    this.type = type;
+};
+
+var Mesh = function(geometry, material){
+    this.geometry = geometry;
+    this.material = material;
+    this.px = 0;
+    this.py = 0;
+    this.pz = 0;
+    this.rx = 0;
+    this.ry = 0;
+    this.rz = 0;
+    this.sx = 1;
+    this.sy = 1;
+    this.sz = 1;
+    if(typeof material.color == "string"){
+        this.r = parseInt(material.color.substr(1,2), 16)/255;
+        this.g = parseInt(material.color.substr(3,2), 16)/255;
+        this.b = parseInt(material.color.substr(5,2), 16)/255;
+    }else if(material.color instanceof Array){
+        this.r = material.color[0];
+        this.g = material.color[1];
+        this.b = material.color[2];
+    }
+    this.owner = null;
+};
+
+Mesh.prototype.setType = function(type){
+    this.type = type;
+};
+
+Mesh.prototype.translate = function(px, py, pz){
+    this.px = px;
+    this.py = py;
+    this.pz = pz;
+    if(this.owner){
+        this.owner.notifyChangeData("position");
+    }
+};
+
+Mesh.prototype.rotate = function(rx, ry, rz){
+    this.rx = rx;
+    this.ry = ry;
+    this.rz = rz;
+    if(this.owner){
+        this.owner.notifyChangeData("rotate");
+    }
+};
+
+Mesh.prototype.scale = function(sx, sy, sz){
+    this.sx = sx;
+    this.sy = sy;
+    this.sz = sz;
+    if(this.owner){
+        this.owner.notifyChangeData("scale");
+    }
+};
+
+
+
+}
 </script>
 
   </body>
